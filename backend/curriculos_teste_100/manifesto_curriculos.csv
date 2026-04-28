@@ -1,0 +1,101 @@
+arquivo;nome;cargo_alvo;tipo
+curriculo_teste_001.pdf;Daniela Silva;Desenvolvedor Python;igual_python
+curriculo_teste_002.pdf;Helena Oliveira;Desenvolvedor Python;igual_python
+curriculo_teste_003.pdf;Tiago Pereira;Desenvolvedor Python;igual_python
+curriculo_teste_004.pdf;Carlos Santos;Desenvolvedor Python;igual_python
+curriculo_teste_005.pdf;Sara Santos;Desenvolvedor Python;igual_python
+curriculo_teste_006.pdf;Helena Gomes;Desenvolvedor Python;igual_python
+curriculo_teste_007.pdf;Ana Oliveira;Desenvolvedor Python;igual_python
+curriculo_teste_008.pdf;Igor Oliveira;Desenvolvedor Python;igual_python
+curriculo_teste_009.pdf;Daniela Souza;Desenvolvedor Python;igual_python
+curriculo_teste_010.pdf;Larissa Costa;Desenvolvedor Python;igual_python
+curriculo_teste_011.pdf;Bruno Gomes;Desenvolvedor Python;igual_python
+curriculo_teste_012.pdf;Marcos Souza;Desenvolvedor Python;igual_python
+curriculo_teste_013.pdf;Vanessa Costa;Desenvolvedor Python;igual_python
+curriculo_teste_014.pdf;Carlos Silva;Desenvolvedor Python;igual_python
+curriculo_teste_015.pdf;Carlos Santos;Desenvolvedor Python;igual_python
+curriculo_teste_016.pdf;Igor Gomes;Desenvolvedor Python;igual_python
+curriculo_teste_017.pdf;Larissa Costa;Desenvolvedor Python;igual_python
+curriculo_teste_018.pdf;Carlos Almeida;Desenvolvedor Python;igual_python
+curriculo_teste_019.pdf;Fernanda Gomes;Desenvolvedor Python;igual_python
+curriculo_teste_020.pdf;Sara Santos;Desenvolvedor Python;igual_python
+curriculo_teste_021.pdf;Helena Silva;Desenvolvedor Python;igual_python
+curriculo_teste_022.pdf;Igor Souza;Desenvolvedor Python;igual_python
+curriculo_teste_023.pdf;Gabriel Gomes;Desenvolvedor Python;igual_python
+curriculo_teste_024.pdf;Eduardo Lima;Desenvolvedor Python;igual_python
+curriculo_teste_025.pdf;Sara Ribeiro;Desenvolvedor Python;igual_python
+curriculo_teste_026.pdf;Tiago Pereira;Desenvolvedor Python;igual_python
+curriculo_teste_027.pdf;Eduardo Ribeiro;Desenvolvedor Python;igual_python
+curriculo_teste_028.pdf;Bruno Souza;Desenvolvedor Python;igual_python
+curriculo_teste_029.pdf;Natalia Almeida;Desenvolvedor Python;igual_python
+curriculo_teste_030.pdf;Marcos Almeida;Desenvolvedor Python;igual_python
+curriculo_teste_031.pdf;Sara Silva;Desenvolvedor Python;igual_python
+curriculo_teste_032.pdf;Kaique Souza;Desenvolvedor Python;igual_python
+curriculo_teste_033.pdf;Fernanda Gomes;Desenvolvedor Python;igual_python
+curriculo_teste_034.pdf;Rafael Oliveira;Desenvolvedor Python;igual_python
+curriculo_teste_035.pdf;Juliana Ribeiro;Desenvolvedor Python;igual_python
+curriculo_teste_036.pdf;Eduardo Costa;Desenvolvedor Python;igual_python
+curriculo_teste_037.pdf;Vanessa Costa;Desenvolvedor Python;igual_python
+curriculo_teste_038.pdf;Daniela Costa;Desenvolvedor Python;igual_python
+curriculo_teste_039.pdf;Bruno Santos;Desenvolvedor Python;igual_python
+curriculo_teste_040.pdf;Carlos Gomes;Desenvolvedor Python;igual_python
+curriculo_teste_041.pdf;Eduardo Gomes;Desenvolvedor Python;parcial_python
+curriculo_teste_042.pdf;Igor Ribeiro;Desenvolvedor Python;parcial_python
+curriculo_teste_043.pdf;Gabriel Ribeiro;Desenvolvedor Python;parcial_python
+curriculo_teste_044.pdf;Juliana Pereira;Desenvolvedor Python;parcial_python
+curriculo_teste_045.pdf;Otavio Ribeiro;Desenvolvedor Python;parcial_python
+curriculo_teste_046.pdf;Helena Santos;Desenvolvedor Python;parcial_python
+curriculo_teste_047.pdf;Ana Almeida;Desenvolvedor Python;parcial_python
+curriculo_teste_048.pdf;Tiago Santos;Desenvolvedor Python;parcial_python
+curriculo_teste_049.pdf;Bruno Santos;Desenvolvedor Python;parcial_python
+curriculo_teste_050.pdf;Kaique Souza;Desenvolvedor Python;parcial_python
+curriculo_teste_051.pdf;Igor Gomes;Desenvolvedor Python;parcial_python
+curriculo_teste_052.pdf;Tiago Almeida;Desenvolvedor Python;parcial_python
+curriculo_teste_053.pdf;Patricia Pereira;Desenvolvedor Python;parcial_python
+curriculo_teste_054.pdf;Daniela Pereira;Desenvolvedor Python;parcial_python
+curriculo_teste_055.pdf;Natalia Gomes;Desenvolvedor Python;parcial_python
+curriculo_teste_056.pdf;Daniela Silva;Suporte Tecnico;distinto
+curriculo_teste_057.pdf;Daniela Santos;Analista de Dados;distinto
+curriculo_teste_058.pdf;Sara Gomes;Analista de Dados;distinto
+curriculo_teste_059.pdf;Fernanda Lima;Suporte Tecnico;distinto
+curriculo_teste_060.pdf;Carlos Gomes;Designer UX/UI;distinto
+curriculo_teste_061.pdf;Bruno Ribeiro;Designer UX/UI;distinto
+curriculo_teste_062.pdf;Carlos Santos;Analista de Dados;distinto
+curriculo_teste_063.pdf;Patricia Gomes;Analista de Dados;distinto
+curriculo_teste_064.pdf;Bruno Oliveira;Suporte Tecnico;distinto
+curriculo_teste_065.pdf;Marcos Lima;Designer UX/UI;distinto
+curriculo_teste_066.pdf;Juliana Pereira;Assistente Administrativo;distinto
+curriculo_teste_067.pdf;Eduardo Santos;DevOps Junior;distinto
+curriculo_teste_068.pdf;Bruno Almeida;Assistente Administrativo;distinto
+curriculo_teste_069.pdf;Kaique Silva;Desenvolvedor Frontend React;distinto
+curriculo_teste_070.pdf;Rafael Ribeiro;Analista de Dados;distinto
+curriculo_teste_071.pdf;Rafael Souza;Designer UX/UI;distinto
+curriculo_teste_072.pdf;Carlos Almeida;Desenvolvedor Frontend React;distinto
+curriculo_teste_073.pdf;Marcos Souza;QA Tester;distinto
+curriculo_teste_074.pdf;Tiago Almeida;Desenvolvedor Frontend React;distinto
+curriculo_teste_075.pdf;Natalia Almeida;QA Tester;distinto
+curriculo_teste_076.pdf;Igor Santos;Assistente Administrativo;distinto
+curriculo_teste_077.pdf;Helena Lima;Suporte Tecnico;distinto
+curriculo_teste_078.pdf;Juliana Gomes;DevOps Junior;distinto
+curriculo_teste_079.pdf;Ana Gomes;QA Tester;distinto
+curriculo_teste_080.pdf;Carlos Ribeiro;Analista de Dados;distinto
+curriculo_teste_081.pdf;Eduardo Costa;Desenvolvedor Frontend React;distinto
+curriculo_teste_082.pdf;Larissa Lima;Analista de Dados;distinto
+curriculo_teste_083.pdf;Sara Lima;QA Tester;distinto
+curriculo_teste_084.pdf;Sara Lima;Assistente Administrativo;distinto
+curriculo_teste_085.pdf;Eduardo Lima;Desenvolvedor Frontend React;distinto
+curriculo_teste_086.pdf;Sara Oliveira;DevOps Junior;distinto
+curriculo_teste_087.pdf;Vanessa Santos;Assistente Administrativo;distinto
+curriculo_teste_088.pdf;Gabriel Lima;QA Tester;distinto
+curriculo_teste_089.pdf;Igor Silva;Desenvolvedor Frontend React;distinto
+curriculo_teste_090.pdf;Igor Silva;Desenvolvedor Frontend React;distinto
+curriculo_teste_091.pdf;Eduardo Lima;Analista de Dados;distinto
+curriculo_teste_092.pdf;Sara Pereira;QA Tester;distinto
+curriculo_teste_093.pdf;Daniela Souza;Assistente Administrativo;distinto
+curriculo_teste_094.pdf;Sara Silva;Designer UX/UI;distinto
+curriculo_teste_095.pdf;Tiago Ribeiro;Analista de Dados;distinto
+curriculo_teste_096.pdf;Eduardo Silva;DevOps Junior;distinto
+curriculo_teste_097.pdf;Bruno Costa;Analista de Dados;distinto
+curriculo_teste_098.pdf;Daniela Costa;Designer UX/UI;distinto
+curriculo_teste_099.pdf;Vanessa Oliveira;Analista de Dados;distinto
+curriculo_teste_100.pdf;Fernanda Pereira;Desenvolvedor Frontend React;distinto

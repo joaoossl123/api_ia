@@ -1,0 +1,274 @@
+.layout {
+  text-align: left;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 2.25rem 1.25rem 3rem;
+}
+
+.cabeçalho {
+  margin-bottom: 1.75rem;
+  border-bottom: 1px solid var(--borda, #1f2933);
+  padding-bottom: 1.25rem;
+}
+
+.titulo-primario {
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.02em;
+  color: var(--titulo, #f0f2f4);
+}
+
+.subtitulo,
+.metadados-cabecalho {
+  color: var(--texto-sec, #8b9aab);
+  margin: 0.35rem 0 0;
+  line-height: 1.5;
+  font-size: 0.95rem;
+}
+
+.metadados-cabecalho {
+  font-size: 0.82rem;
+  opacity: 0.9;
+}
+
+.grelha {
+  display: grid;
+  gap: 1.5rem;
+}
+
+@media (min-width: 900px) {
+  .grelha {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.cartao {
+  background: var(--cartao, #0f1218);
+  border: 1px solid var(--borda, #1f2933);
+  border-radius: 12px;
+  padding: 1.5rem 1.35rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+
+.cartao--largo {
+  margin-top: 1.5rem;
+}
+
+.cartao h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  color: var(--titulo, #e8ebef);
+}
+
+.explicacao {
+  color: var(--texto-sec, #8b9aab);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0 0 1rem;
+}
+
+.alerta {
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.alerta--erro {
+  background: rgba(225, 70, 70, 0.1);
+  border: 1px solid rgba(225, 100, 100, 0.4);
+  color: #f5a8a8;
+}
+
+.formulario {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.rotulo {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #7c8a99;
+  margin-top: 0.2rem;
+}
+
+.entrada {
+  background: #0a0c10;
+  border: 1px solid #1f2430;
+  border-radius: 8px;
+  color: #e2e6ea;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+}
+
+.entrada:focus {
+  outline: 2px solid #3a7bd5;
+  border-color: transparent;
+}
+
+.entrada--ficheiro {
+  padding: 0.45rem;
+}
+
+.entrada--curto {
+  max-width: 5rem;
+}
+
+.texto-grande {
+  min-height: 10rem;
+  background: #0a0c10;
+  border: 1px solid #1f2430;
+  border-radius: 8px;
+  color: #e2e6ea;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.fila-rotulos {
+  margin-top: 0.2rem;
+}
+
+.botao {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.5rem 1rem;
+  margin-top: 0.35rem;
+  transition: filter 0.12s, transform 0.1s;
+}
+
+.botao:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.botao--primario {
+  background: linear-gradient(150deg, #1e6ad4, #0f4a9a);
+  color: #f5f7fa;
+}
+
+.botao--primario:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.botao--secundario {
+  background: #152028;
+  color: #d8e0e8;
+  border-color: #2a3a4a;
+}
+
+.botao--secundario:hover:not(:disabled) {
+  border-color: #3a5a7a;
+}
+
+.botao--mudo {
+  background: transparent;
+  color: #9eb0c0;
+  border: 1px solid #2a333f;
+  margin-top: 0;
+  font-size: 0.85rem;
+}
+
+.ranking {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item-ranking {
+  display: flex;
+  gap: 1rem;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid #1a1f2a;
+}
+
+.item-ranking:last-child {
+  border-bottom: 0;
+}
+
+.pos {
+  font-size: 0.85rem;
+  color: #5a8fd4;
+  font-weight: 600;
+  min-width: 2.2rem;
+}
+
+.ficha {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: #8b9aab;
+}
+
+.pontuacao-linha {
+  margin-top: 0.45rem;
+  color: #c0cad4;
+  font-size: 0.9rem;
+}
+
+.dica-escore {
+  font-size: 0.8rem;
+  color: #6a7888;
+  margin: 0.3rem 0 0;
+}
+
+.lista-idx {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.linha-idx {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  border-bottom: 1px solid #1a1f2a;
+  padding: 0.75rem 0;
+  font-size: 0.9rem;
+  color: #b8c1cc;
+}
+
+.linha-idx:last-child {
+  border-bottom: 0;
+}
+
+.nome-arq {
+  color: #6a7888;
+  font-weight: 400;
+  font-size: 0.85em;
+}
+
+.vista_previa {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: #5c6877;
+  line-height: 1.45;
+  max-width: 52ch;
+}
+
+.alinhado-direita {
+  flex-shrink: 0;
+}
+
+.refr {
+  text-align: right;
+  margin: 0.75rem 0 0;
+}
+
+.sem-idx,
+.sem-resultados {
+  color: #6a7888;
+  font-size: 0.9rem;
+  margin: 0;
+  padding: 0.4rem 0;
+}

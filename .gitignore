@@ -1,0 +1,12 @@
+backend/venv/
+backend/**/__pycache__/
+backend/curriculos_arquivos/*
+backend/armazenamento/*
+!backend/curriculos_arquivos/.gitkeep
+!backend/armazenamento/.gitkeep
+frontend/node_modules/
+frontend/dist/
+**/.env
+**/.env.local
+*.pyc
+.pytest_cache/
