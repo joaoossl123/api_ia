@@ -1,0 +1,38 @@
+Tutorial rápido: rodar Backend + Frontend
+1) Pré-requisitos
+Python 3.11
+Node.js (recomendado 20+)
+Estar na pasta do projeto: Api-IA_PROJETOMULHERES
+2) Subir o Backend (FastAPI)
+Abra um terminal na raiz do projeto e rode:
+
+cd backend
+python -m pip install -r requirements.txt
+python -m spacy download pt_core_news_sm
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+Backend deve ficar em:
+
+API: http://127.0.0.1:8000
+Swagger: http://127.0.0.1:8000/docs
+Healthcheck: http://127.0.0.1:8000/saude
+Teste rápido:
+
+curl http://127.0.0.1:8000/saude
+3) Subir o Frontend (Vite)
+Abra outro terminal e rode:
+
+cd frontend
+npm install
+npx vite --host 127.0.0.1 --port 5173
+Frontend em:
+
+http://127.0.0.1:5173
+4) Ordem recomendada
+Suba backend primeiro
+Depois suba frontend
+Acesse http://127.0.0.1:5173
+5) Se der erro comum
+Porta em uso: troque --port 8000 ou --port 5173
+Erro no spaCy: rode de novo
+python -m spacy download pt_core_news_sm
+Dependências Python pesadas no Windows: execute terminal como administrador e tente novamente.
