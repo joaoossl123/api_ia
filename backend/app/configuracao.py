@@ -78,14 +78,14 @@ class Configuracao(BaseSettings):
     USAR_PYRESPARSER: bool = True
     HIBRIDO_USAR_GEMINI: bool = True
     # Pesos do Resume Matcher (soma recomendada ≈ 1.0)
-    PESO_RM_SEMANTICO: float = 0.35
-    PESO_RM_TFIDF: float = 0.30
-    PESO_RM_SKILLS: float = 0.28
-    PESO_RM_EXPERIENCIA: float = 0.07
+    PESO_RM_SEMANTICO: float = 0.45
+    PESO_RM_TFIDF: float = 0.25
+    PESO_RM_SKILLS: float = 0.20
+    PESO_RM_EXPERIENCIA: float = 0.10
 
     # Pesos do score final (0..1): cruz (par a par) + alinhamento de termos da vaga no PDF
-    PESO_CROSS_ENCODER: float = 0.62
-    PESO_COBERTURA_LEXICAL: float = 0.38
+    PESO_CROSS_ENCODER: float = 0.70
+    PESO_COBERTURA_LEXICAL: float = 0.30
 
     # Se houver no máximo este número de CVs, todos entram no reclassificador (máxima aderência)
     MAX_CURRICULOS_TODOS_NA_ANALISE: int = 64
@@ -97,7 +97,7 @@ class Configuracao(BaseSettings):
 
     # Busca: corte após reclassificação (escala combinada, tendencialmente 0,25–0,95)
     LIMITE_PADRAO_CANDIDATOS: int = 15
-    CORTE_PONTUACAO_MINIMA: float = 0.42
+    CORTE_PONTUACAO_MINIMA: float = 0.35
     RETORNAR_MELHOR_NUMERO: int = 5
 
 

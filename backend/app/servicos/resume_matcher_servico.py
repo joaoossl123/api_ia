@@ -140,17 +140,7 @@ def pontuar_candidato_resume_matcher(
         exp_score = min(1.0, float(anos) / 8.0)
 
     p = w_sem * sem + w_tfidf * tfidf + w_skill * skill + w_exp * exp_score
-    if comps and skill < 0.28:
-        p *= 0.52
-    if tfidf < 0.18:
-        p *= 0.58
-    if sem > 0.55 and tfidf < 0.22 and skill < 0.35:
-        p *= 0.45
-    p = float(max(0.0, min(1.0, p)))
-
-    from app.servicos.precisao_analise import calibrar_afinidade
-
-    p = calibrar_afinidade(descricao_vaga, texto_cv, p)
+    p = float(max(0.0, min(1.0, p ** 0.88)))
 
     lacunas = _lacunas_competencias(habs, comps)
     alinhadas = [c for c in comps if c not in lacunas][:6]

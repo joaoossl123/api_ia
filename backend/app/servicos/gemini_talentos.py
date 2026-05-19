@@ -19,17 +19,6 @@ if TYPE_CHECKING:
 _JSON_UM = re.compile(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\{.*\}", re.DOTALL)
 PREFIXO_QUOTA = "GEMINI_QUOTA:"
 
-_REGRAS_PRECISAO_GEMINI = """
-Regras de precisão (obrigatórias):
-- Use APENAS factos presentes no texto do CV; não invente formação, cargo ou ferramenta.
-- Escala: 0–15 sem ligação; 16–35 função/setor diferente; 36–55 parcial; 56–75 bom alinhamento;
-  76–90 forte; 91–100 só com experiência direta e requisitos principais comprovados.
-- Proibido score > 40 se o CV não mencionar explicitamente a função, área ou stack pedida na vaga.
-- Proibido score > 65 se faltar experiência prática clara na função (não só palavras soltas).
-- A justificativa DEVE citar 2 evidências literais do CV (ferramenta, cargo, empresa ou tarefa)
-  e 1 lacuna ou risco se o score for < 70.
-""".strip()
-
 
 class ErroQuotaGemini(RuntimeError):
     """Cota ou limite 429 da API Google — permite re-tentar ou mudar de modelo."""
@@ -145,7 +134,7 @@ def _gerar_novo(chave: str, modelo: str, prompt: str) -> str:
         cliente = genai.Client(api_key=chave)
         cfg = types.GenerateContentConfig(
             max_output_tokens=8192,
-            temperature=0.05,
+            temperature=0.1,
         )
         resp = cliente.models.generate_content(
             model=modelo,
@@ -189,10 +178,20 @@ def ordenar_talentos_por_gemini_lote(
 
     vaga = (descricao_vaga or "").strip()
     prompt = f"""
-Atue como recrutador técnico rigoroso. Para cada candidato, compare o CV à VAGA.
-Atribua "score" inteiro 0–100 e "justificativa" objetiva em português (até 280 carateres).
+Atue como recrutador técnico. Para cada candidato, compare o CV à VAGA.
+Atribua a cada um um "score" inteiro de 0 a 100 (0 = sem ligação, 100 = muito adequado) e
+uma "justificativa" objetiva em português (1 a 2 frases, até 260 carateres), baseada só no texto do CV.
 
-{_REGRAS_PRECISAO_GEMINI}
+Regras de aderência (aplique sempre):
+- O score mede a adequação DIRETA da experiência comprovada no CV à função, tarefas e requisitos descritos
+  na vaga. Não basta competência genérica ou setor “parecido”.
+- Se a experiência principal do candidato for noutro tipo de função, setor de atuação ou conjunto de
+  responsabilidades claramente diferente do que a vaga exige, a nota deve ser baixa (muitas vezes abaixo
+  de 30), mesmo que o CV seja sólido em outro domínio.
+- Só atribua notas altas quando o CV mostrar, com clareza, prática profissional alinhada ao que a vaga
+  pede (cargo, atividades, especialidade).
+- A justificativa deve citar pelo menos 2 evidências concretas do currículo (ex.: ferramentas, tarefas,
+  anos de experiência, tipo de operação, segmento), e mencionar explicitamente o motivo da escolha.
 
 VAGA:
 {vaga}
@@ -251,19 +250,12 @@ O array "avaliacoes" deve conter exatamente {n} entradas, com cada id_candidato 
                     continue
                 avs = [x for x in (js.get("avaliacoes") or []) if isinstance(x, dict)]
                 ids_por = {a[0] for a in candidatos}
-                texto_por_id = {a[0]: a[2] for a in candidatos}
-                from app.servicos.precisao_analise import calibrar_afinidade
-
                 mapeado: dict[str, tuple[float, str | None, int]] = {}
                 for x in avs:
                     cid = str(x.get("id_candidato", "")).strip()
                     if not cid or cid not in ids_por:
                         continue
                     p01, s100 = _pontuacao_0_1_e_score100(x.get("score", 0))
-                    p01 = calibrar_afinidade(
-                        descricao_vaga, texto_por_id.get(cid, ""), p01
-                    )
-                    s100 = int(round(p01 * 100))
                     jt = x.get("justificativa")
                     j = str(jt)[:500] if jt else None
                     mapeado[cid] = (p01, j, s100)
@@ -305,9 +297,13 @@ def _analisar_um_cv_direto(
     tre = (texto_cv or "")[:lim]
     vaga_l = (vaga or "").strip()
     pr = f"""
-Recrutador técnico rigoroso. id_candidato: {id_cand} | Nome: {nome}
-
-{_REGRAS_PRECISAO_GEMINI}
+Recrutador técnico. Avalie o CV para a vaga. id_candidato (UUID) deve ser: {id_cand}
+Nome no sistema: {nome}
+O score 0-100 mede a adequação DIRETA: experiência comprovada alinhada à função e requisitos da vaga.
+Rejeite com nota baixa perfis cuja experiência seja noutro tipo de função ou setor, mesmo que o CV seja
+forte fora do pedido.
+A justificativa deve ser direta, personalizada para este candidato, e citar pelo menos 2 evidências
+observáveis no CV que expliquem a nota.
 
 VAGA:
 {vaga_l}
@@ -350,10 +346,6 @@ Responda SOMENTE JSON:
             js = _extrair_json_obj(raw)
             if not js or "score" not in js:
                 continue
-            from app.servicos.precisao_analise import calibrar_score_0_100
-
-            _, s_cal = calibrar_score_0_100(vaga_l, tre, int(js.get("score", 0)))
-            js["score"] = s_cal
             return js
     return None
 

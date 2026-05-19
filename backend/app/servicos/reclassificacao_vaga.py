@@ -210,18 +210,17 @@ def pontuacao_final_aderencia(
     tv = _tokens_significativos(descricao_vaga)
     if 1 <= len(tv) <= 3 and any(_termo_aparece_no_texto(t, tx) for t in tv) and cov >= 0.5:
         p = min(1.0, p * 1.06)
-    if len(tv) >= 1 and cov < 0.25:
-        p *= 0.42
-    elif len(tv) >= 1 and cov < 0.4:
-        p *= 0.62
+    if len(tv) >= 1 and cov < 0.2:
+        p *= 0.5
+    if len(tv) >= 1 and cov < 0.1:
+        p *= 0.6
     cobertura_comp = _taxa_cobertura_competencias(descricao_vaga, tx)
     if cobertura_comp < 0.34:
-        p *= 0.55
+        p *= 0.65
     elif cobertura_comp < 0.67:
-        p *= 0.78
-    from app.servicos.precisao_analise import calibrar_afinidade
-
-    return calibrar_afinidade(descricao_vaga, tx, p)
+        p *= 0.82
+    p = float(p) ** 0.8
+    return max(0.0, min(1.0, p))
 
 
 def ordenar_por_aderencia(
@@ -289,21 +288,11 @@ def justificativa_resumo_local(
         if t and (t in _normalizar(doc) or _termo_aparece_no_texto(t, doc)):
             reforco.append(t)
     reforco = reforco[:3]
-    from app.servicos.precisao_analise import evidencias_no_cv
-
-    ev = evidencias_no_cv(descricao_vaga, texto_curriculo, max_itens=4)
-    if ev:
-        termos = "”, “".join(ev)
-        return (
-            f"{nome}: evidências no CV alinhadas à vaga (“{termos}”). "
-            f"Aderência calibrada {s100}% (cross-encoder + cobertura de termos no PDF). "
-            "Valide cargo e período no documento original."
-        )
     if reforco:
         termos = "”, “".join(reforco)
         return (
-            f"Para a vaga pedida, o currículo de {nome} mostra ligação parcial (termos: “{termos}”). "
-            f"Aderência {s100}%. Confirme função e experiência no PDF."
+            f"Para a vaga pedida, o currículo de {nome} mostra sinais de ligação com a busca (termos da vaga no CV: “{termos}”). "
+            f"Aderência automática: {s100}%. Confirme a experiência e o título lendo o PDF."
         )
     if s100 >= 50:
         return (

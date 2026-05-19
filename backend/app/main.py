@@ -363,7 +363,7 @@ def _requisito_tem_evidencia_no_cv(requisito: str, texto_cv: str) -> bool:
     if not toks:
         return False
     hits = sum(1 for t in toks if t in doc)
-    min_hits = max(1, int(round(len(toks) * 0.75)))
+    min_hits = max(1, int(round(len(toks) * 0.6)))
     return hits >= min_hits
 
 
