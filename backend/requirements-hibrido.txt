@@ -1,0 +1,7 @@
+# Opcional: extração estruturada estilo PyResparser (inglês; GPL-3.0)
+# Instale APÓS requirements.txt:
+#   python -m pip install -r requirements-hibrido.txt
+#   python -m spacy download en_core_web_sm
+#   python -m nltk.downloader stopwords
+pyresparser>=1.0.6
+nltk>=3.8.1

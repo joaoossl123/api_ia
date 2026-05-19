@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import Column, DateTime, String, Text, create_engine
+from sqlalchemy import Column, DateTime, String, Text, create_engine, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.configuracao import Configuracao, obter_caminho_backend, resolver_caminho
@@ -27,6 +27,7 @@ class RegistroCurriculo(Base):
     caminho_relativo_pdf = Column(String(1000), nullable=False)
     texto_indexado = Column(Text, nullable=False)
     resumo_vista_previa = Column(String(2000), nullable=True)
+    dados_estruturados_json = Column(Text, nullable=True)
     criado_em = Column(DateTime(timezone=True), default=_agora_utc, nullable=False)
 
 
@@ -44,7 +45,19 @@ def init_banco(c: Configuracao) -> None:
         connect_args={"check_same_thread": False},
     )
     Base.metadata.create_all(bind=_motor)
+    _migrar_sqlite(_motor)
     _Sessao = sessionmaker(autocommit=False, autoflush=False, bind=_motor)
+
+
+def _migrar_sqlite(motor: object) -> None:
+    """Adiciona colunas novas em bases SQLite já existentes."""
+    with motor.connect() as conn:  # type: ignore[union-attr]
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(registros_curriculos)"))}
+        if "dados_estruturados_json" not in cols:
+            conn.execute(
+                text("ALTER TABLE registros_curriculos ADD COLUMN dados_estruturados_json TEXT")
+            )
+            conn.commit()
 
 
 def abrir_sessao() -> Session:

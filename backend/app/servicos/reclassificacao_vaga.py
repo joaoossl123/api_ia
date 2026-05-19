@@ -8,6 +8,8 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
+
+import numpy as np
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -154,6 +156,14 @@ def _obter_reclassificador_cruzado(nome_modelo: str):
     )
 
 
+def _pares_id_texto_seguros(candidatos: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for c in candidatos:
+        if isinstance(c, (list, tuple)) and len(c) >= 2:
+            out.append((str(c[0]), str(c[1])))
+    return out
+
+
 def pontuacoes_pares_cruzado(
     descricao_vaga: str,
     textos_candidato: list[str],
@@ -173,8 +183,9 @@ def pontuacoes_pares_cruzado(
         batch_size=4,
         convert_to_numpy=True,
     )
+    arr = np.asarray(bruto, dtype=np.float64).reshape(-1)
     out: list[float] = []
-    for s in bruto:
+    for s in arr:
         v = float(s.item()) if hasattr(s, "item") else float(s)
         out.append(_logit_para_01(v))
     return out
@@ -199,18 +210,18 @@ def pontuacao_final_aderencia(
     tv = _tokens_significativos(descricao_vaga)
     if 1 <= len(tv) <= 3 and any(_termo_aparece_no_texto(t, tx) for t in tv) and cov >= 0.5:
         p = min(1.0, p * 1.06)
-    if len(tv) >= 1 and cov < 0.2:
-        p *= 0.5
-    if len(tv) >= 1 and cov < 0.1:
-        p *= 0.6
+    if len(tv) >= 1 and cov < 0.25:
+        p *= 0.42
+    elif len(tv) >= 1 and cov < 0.4:
+        p *= 0.62
     cobertura_comp = _taxa_cobertura_competencias(descricao_vaga, tx)
     if cobertura_comp < 0.34:
-        p *= 0.65
+        p *= 0.55
     elif cobertura_comp < 0.67:
-        p *= 0.82
-    # Calibração para leitura humana: mantém a ordem, mas abre a faixa média.
-    p = float(p) ** 0.8
-    return max(0.0, min(1.0, p))
+        p *= 0.78
+    from app.servicos.precisao_analise import calibrar_afinidade
+
+    return calibrar_afinidade(descricao_vaga, tx, p)
 
 
 def ordenar_por_aderencia(
@@ -218,6 +229,7 @@ def ordenar_por_aderencia(
     descricao_vaga: str,
     candidatos: list[tuple[str, str]],
 ) -> list[tuple[str, float]]:
+    candidatos = _pares_id_texto_seguros(candidatos)
     if not candidatos:
         return []
     ids = [c[0] for c in candidatos]
@@ -242,6 +254,7 @@ def ordenar_por_aderencia_lexical(
     Fallback leve quando o cross-encoder não consegue carregar (RAM/arquivo/corrupto).
     Mantém uma ordenação útil usando cobertura lexical + competências obrigatórias.
     """
+    candidatos = _pares_id_texto_seguros(candidatos)
     if not candidatos:
         return []
     out: list[tuple[str, float]] = []
@@ -269,18 +282,28 @@ def justificativa_resumo_local(
     nome = (nome_candidato or "Candidato").strip() or "Candidato"
     nome = nome[:120]
     s100 = max(0, min(100, int(round(float(pontuacao_0_1) * 100))))
-    tv = _tokens_significativos(descricao_vaga)[:6]
+    tv = sorted(_tokens_significativos(descricao_vaga))[:6]
     doc = (texto_curriculo or "") + " "
     reforco: list[str] = []
     for t in tv:
         if t and (t in _normalizar(doc) or _termo_aparece_no_texto(t, doc)):
             reforco.append(t)
     reforco = reforco[:3]
+    from app.servicos.precisao_analise import evidencias_no_cv
+
+    ev = evidencias_no_cv(descricao_vaga, texto_curriculo, max_itens=4)
+    if ev:
+        termos = "”, “".join(ev)
+        return (
+            f"{nome}: evidências no CV alinhadas à vaga (“{termos}”). "
+            f"Aderência calibrada {s100}% (cross-encoder + cobertura de termos no PDF). "
+            "Valide cargo e período no documento original."
+        )
     if reforco:
         termos = "”, “".join(reforco)
         return (
-            f"Para a vaga pedida, o currículo de {nome} mostra sinais de ligação com a busca (termos da vaga no CV: “{termos}”). "
-            f"Aderência automática: {s100}%. Confirme a experiência e o título lendo o PDF."
+            f"Para a vaga pedida, o currículo de {nome} mostra ligação parcial (termos: “{termos}”). "
+            f"Aderência {s100}%. Confirme função e experiência no PDF."
         )
     if s100 >= 50:
         return (

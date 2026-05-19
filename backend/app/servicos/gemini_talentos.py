@@ -19,9 +19,47 @@ if TYPE_CHECKING:
 _JSON_UM = re.compile(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\{.*\}", re.DOTALL)
 PREFIXO_QUOTA = "GEMINI_QUOTA:"
 
+_REGRAS_PRECISAO_GEMINI = """
+Regras de precisão (obrigatórias):
+- Use APENAS factos presentes no texto do CV; não invente formação, cargo ou ferramenta.
+- Escala: 0–15 sem ligação; 16–35 função/setor diferente; 36–55 parcial; 56–75 bom alinhamento;
+  76–90 forte; 91–100 só com experiência direta e requisitos principais comprovados.
+- Proibido score > 40 se o CV não mencionar explicitamente a função, área ou stack pedida na vaga.
+- Proibido score > 65 se faltar experiência prática clara na função (não só palavras soltas).
+- A justificativa DEVE citar 2 evidências literais do CV (ferramenta, cargo, empresa ou tarefa)
+  e 1 lacuna ou risco se o score for < 70.
+""".strip()
+
+
+class ErroQuotaGemini(RuntimeError):
+    """Cota ou limite 429 da API Google — permite re-tentar ou mudar de modelo."""
+
 
 def chave_disponivel(config: "Configuracao") -> bool:
     return bool((getattr(config, "CHAVE_API_GEMINI", None) or "").strip())
+
+
+def _trios_candidatos_seguros(
+    candidatos: list[tuple[str, str, str]],
+) -> list[tuple[str, str, str]]:
+    out: list[tuple[str, str, str]] = []
+    for item in candidatos:
+        if isinstance(item, (list, tuple)) and len(item) >= 3:
+            out.append((str(item[0]), str(item[1]), str(item[2])))
+    return out
+
+
+def _modelos_gemini_ordenados(config: "Configuracao") -> list[str]:
+    """Ordem: principal → backup → terceiro (opcional). Evita duplicar o mesmo nome."""
+    out: list[str] = []
+    for m in [
+        (getattr(config, "NOME_MODELO_GEMINI", None) or "gemini-2.5-flash").strip(),
+        (getattr(config, "NOME_MODELO_GEMINI_BACKUP", None) or "gemini-1.5-flash").strip(),
+        (getattr(config, "NOME_MODELO_GEMINI_TERCEIRO", None) or "").strip(),
+    ]:
+        if m and m not in out:
+            out.append(m)
+    return out
 
 
 def _pontuacao_0_1_e_score100(score: object) -> tuple[float, int]:
@@ -107,7 +145,7 @@ def _gerar_novo(chave: str, modelo: str, prompt: str) -> str:
         cliente = genai.Client(api_key=chave)
         cfg = types.GenerateContentConfig(
             max_output_tokens=8192,
-            temperature=0.1,
+            temperature=0.05,
         )
         resp = cliente.models.generate_content(
             model=modelo,
@@ -116,9 +154,10 @@ def _gerar_novo(chave: str, modelo: str, prompt: str) -> str:
         )
     except Exception as e:  # noqa: BLE001
         if _e_quota_ou_429(e):
-            raise RuntimeError(
-                f"{PREFIXO_QUOTA} Cota ou limite da API Gemini. Aguarde 1 min., altere o modelo em "
-                f"NOME_MODELO_GEMINI, ou a API cairá no classificador local. Detalhe: {e!s}"
+            raise ErroQuotaGemini(
+                f"{PREFIXO_QUOTA} Cota ou limite da API Gemini (HTTP 429). "
+                f"Aguarde e tente de novo, reduza GEMINI_MAX_CANDIDATOS_LOTE ou use PREFERIR_MOTOR_LOCAL=true. "
+                f"Detalhe: {e!s}"
             ) from e
         raise
     return _texto_resposta(resp)
@@ -129,6 +168,7 @@ def ordenar_talentos_por_gemini_lote(
     descricao_vaga: str,
     candidatos: list[tuple[str, str, str]],
 ) -> list[tuple[str, float, str | None, int | None]]:
+    candidatos = _trios_candidatos_seguros(candidatos)
     if not candidatos:
         return []
     ch = (getattr(config, "CHAVE_API_GEMINI", None) or "").strip()
@@ -149,20 +189,10 @@ def ordenar_talentos_por_gemini_lote(
 
     vaga = (descricao_vaga or "").strip()
     prompt = f"""
-Atue como recrutador técnico. Para cada candidato, compare o CV à VAGA.
-Atribua a cada um um "score" inteiro de 0 a 100 (0 = sem ligação, 100 = muito adequado) e
-uma "justificativa" objetiva em português (1 a 2 frases, até 260 carateres), baseada só no texto do CV.
+Atue como recrutador técnico rigoroso. Para cada candidato, compare o CV à VAGA.
+Atribua "score" inteiro 0–100 e "justificativa" objetiva em português (até 280 carateres).
 
-Regras de aderência (aplique sempre):
-- O score mede a adequação DIRETA da experiência comprovada no CV à função, tarefas e requisitos descritos
-  na vaga. Não basta competência genérica ou setor “parecido”.
-- Se a experiência principal do candidato for noutro tipo de função, setor de atuação ou conjunto de
-  responsabilidades claramente diferente do que a vaga exige, a nota deve ser baixa (muitas vezes abaixo
-  de 30), mesmo que o CV seja sólido em outro domínio.
-- Só atribua notas altas quando o CV mostrar, com clareza, prática profissional alinhada ao que a vaga
-  pede (cargo, atividades, especialidade).
-- A justificativa deve citar pelo menos 2 evidências concretas do currículo (ex.: ferramentas, tarefas,
-  anos de experiência, tipo de operação, segmento), e mencionar explicitamente o motivo da escolha.
+{_REGRAS_PRECISAO_GEMINI}
 
 VAGA:
 {vaga}
@@ -178,66 +208,86 @@ Responda SOMENTE com JSON puro (sem ```):
 O array "avaliacoes" deve conter exatamente {n} entradas, com cada id_candidato listado acima, sem repetir.
 """.strip()
 
-    modelos: list[str] = []
-    for m in [
-        (getattr(config, "NOME_MODELO_GEMINI", None) or "gemini-2.0-flash").strip(),
-        (getattr(config, "NOME_MODELO_GEMINI_BACKUP", None) or "gemini-1.5-flash").strip(),
-    ]:
-        if m and m not in modelos:
-            modelos.append(m)
+    modelos = _modelos_gemini_ordenados(config)
 
     tent = max(1, int(getattr(config, "GEMINI_TENTATIVAS_POR_MODELO", 1)))
+    tent_429 = max(1, int(getattr(config, "GEMINI_TENTATIVAS_429", 2)))
     pausa_503 = max(1, int(getattr(config, "GEMINI_PAUSA_503_SEGUNDOS", 2)))
+    pausa_429 = max(5, int(getattr(config, "GEMINI_PAUSA_429_SEGUNDOS", 45)))
     last_info = ""
 
     for mod in modelos:
         for _ in range(tent):
-            try:
-                raw = _gerar_novo(ch, mod, prompt)
-            except RuntimeError as e:
-                s = str(e)
-                if PREFIXO_QUOTA in s:
-                    raise
-                if _e_overload_503(e):
-                    last_info = s
-                    time.sleep(float(pausa_503))
-                    continue
-                last_info = s
-                break
+            raw: str | None = None
+            for tentativa_quota in range(tent_429):
+                try:
+                    raw = _gerar_novo(ch, mod, prompt)
+                    break
+                except ErroQuotaGemini as e:
+                    last_info = str(e)
+                    if tentativa_quota + 1 < tent_429:
+                        time.sleep(float(pausa_429))
+                        continue
+                    raw = None
+                    break
+                except RuntimeError as e:
+                    s = str(e)
+                    if _e_overload_503(e):
+                        last_info = s
+                        time.sleep(float(pausa_503))
+                    else:
+                        last_info = s
+                    raw = None
+                    break
+            if raw is None:
+                continue
             if not raw:
                 last_info = "resposta vazia do modelo"
                 continue
-            js = _extrair_json_obj(raw)
-            if not js:
-                last_info = "json inválido"
-                continue
-            avs = [x for x in (js.get("avaliacoes") or []) if isinstance(x, dict)]
-            ids_por = {a[0] for a in candidatos}
-            mapeado: dict[str, tuple[float, str | None, int]] = {}
-            for x in avs:
-                cid = str(x.get("id_candidato", "")).strip()
-                if not cid or cid not in ids_por:
+            try:
+                js = _extrair_json_obj(raw)
+                if not js:
+                    last_info = "json inválido"
                     continue
-                p01, s100 = _pontuacao_0_1_e_score100(x.get("score", 0))
-                jt = x.get("justificativa")
-                j = str(jt)[:500] if jt else None
-                mapeado[cid] = (p01, j, s100)
-            faltou = [cid for cid, _, _ in candidatos if cid not in mapeado]
-            for cid in faltou:
-                mapeado[cid] = (
-                    0.0,
-                    "Id não retornado na mesma ronda; confira tamanho do lote em TRECHO_CANDIDATO_GEMINI.",
-                    0,
-                )
-            if not mapeado:
-                last_info = "nenhum id reconhecido na resposta"
+                avs = [x for x in (js.get("avaliacoes") or []) if isinstance(x, dict)]
+                ids_por = {a[0] for a in candidatos}
+                texto_por_id = {a[0]: a[2] for a in candidatos}
+                from app.servicos.precisao_analise import calibrar_afinidade
+
+                mapeado: dict[str, tuple[float, str | None, int]] = {}
+                for x in avs:
+                    cid = str(x.get("id_candidato", "")).strip()
+                    if not cid or cid not in ids_por:
+                        continue
+                    p01, s100 = _pontuacao_0_1_e_score100(x.get("score", 0))
+                    p01 = calibrar_afinidade(
+                        descricao_vaga, texto_por_id.get(cid, ""), p01
+                    )
+                    s100 = int(round(p01 * 100))
+                    jt = x.get("justificativa")
+                    j = str(jt)[:500] if jt else None
+                    mapeado[cid] = (p01, j, s100)
+                for cid, _, _ in candidatos:
+                    if cid not in mapeado:
+                        mapeado[cid] = (
+                            0.0,
+                            "Id não retornado na mesma ronda; confira tamanho do lote em TRECHO_CANDIDATO_GEMINI.",
+                            0,
+                        )
+                if not mapeado:
+                    last_info = "nenhum id reconhecido na resposta"
+                    continue
+                out = []
+                for cid, _, _ in candidatos:
+                    t = mapeado[cid]
+                    out.append((cid, t[0], t[1], t[2]))
+                out.sort(key=lambda x: (-(x[1] or 0.0), x[0]))
+                return out
+            except (TypeError, KeyError, ValueError, IndexError) as e:
+                last_info = f"parse/gemini: {type(e).__name__}: {e}"
                 continue
-            out: list[tuple[str, float, str | None, int | None]] = []
-            for cid, _, _ in candidatos:
-                t = mapeado[cid]
-                out.append((cid, t[0], t[1], t[2]))
-            out.sort(key=lambda x: (-(x[1] or 0.0), x[0]))
-            return out
+    if PREFIXO_QUOTA in (last_info or ""):
+        raise ErroQuotaGemini(last_info)
     raise RuntimeError(
         f"Gemini (lote) não concluiu. {last_info} — confira o nome do modelo (ex.: gemini-2.0-flash) em .env"
     )
@@ -255,13 +305,9 @@ def _analisar_um_cv_direto(
     tre = (texto_cv or "")[:lim]
     vaga_l = (vaga or "").strip()
     pr = f"""
-Recrutador técnico. Avalie o CV para a vaga. id_candidato (UUID) deve ser: {id_cand}
-Nome no sistema: {nome}
-O score 0-100 mede a adequação DIRETA: experiência comprovada alinhada à função e requisitos da vaga.
-Rejeite com nota baixa perfis cuja experiência seja noutro tipo de função ou setor, mesmo que o CV seja
-forte fora do pedido.
-A justificativa deve ser direta, personalizada para este candidato, e citar pelo menos 2 evidências
-observáveis no CV que expliquem a nota.
+Recrutador técnico rigoroso. id_candidato: {id_cand} | Nome: {nome}
+
+{_REGRAS_PRECISAO_GEMINI}
 
 VAGA:
 {vaga_l}
@@ -273,33 +319,41 @@ Responda SOMENTE JSON:
 {{"id_candidato": "{id_cand}", "score": <0-100 inteiro>, "justificativa": "1-2 frases com 2 evidências concretas do CV"}}
 """.strip()
 
-    modelos: list[str] = []
-    for m in [
-        (getattr(config, "NOME_MODELO_GEMINI", None) or "gemini-2.0-flash").strip(),
-        (getattr(config, "NOME_MODELO_GEMINI_BACKUP", None) or "gemini-1.5-flash").strip(),
-    ]:
-        if m and m not in modelos:
-            modelos.append(m)
+    modelos = _modelos_gemini_ordenados(config)
     tent = max(1, int(getattr(config, "GEMINI_TENTATIVAS_POR_MODELO", 1)))
     pausa_503 = max(1, int(getattr(config, "GEMINI_PAUSA_503_SEGUNDOS", 2)))
 
+    pausa_429 = max(5, int(getattr(config, "GEMINI_PAUSA_429_SEGUNDOS", 45)))
+    tent_429 = max(1, int(getattr(config, "GEMINI_TENTATIVAS_429", 2)))
+
     for mod in modelos:
         for _ in range(tent):
-            try:
-                raw = _gerar_novo(chave, mod, pr)
-            except RuntimeError as e:
-                if PREFIXO_QUOTA in str(e):
+            raw: str | None = None
+            for tentativa_quota in range(tent_429):
+                try:
+                    raw = _gerar_novo(chave, mod, pr)
+                    break
+                except ErroQuotaGemini as e:
+                    if tentativa_quota + 1 < tent_429:
+                        time.sleep(float(pausa_429))
+                        continue
                     raise
-                if _e_overload_503(e):
-                    time.sleep(float(pausa_503))
-                    continue
-                break
+                except RuntimeError as e:
+                    if _e_overload_503(e):
+                        time.sleep(float(pausa_503))
+                    break
+            if raw is None:
+                continue
             if not raw:
                 time.sleep(0.25)
                 continue
             js = _extrair_json_obj(raw)
             if not js or "score" not in js:
                 continue
+            from app.servicos.precisao_analise import calibrar_score_0_100
+
+            _, s_cal = calibrar_score_0_100(vaga_l, tre, int(js.get("score", 0)))
+            js["score"] = s_cal
             return js
     return None
 
@@ -309,6 +363,7 @@ def _sequencial_ordenar(
     descricao_vaga: str,
     candidatos: list[tuple[str, str, str]],
 ) -> list[tuple[str, float, str | None, int | None]]:
+    candidatos = _trios_candidatos_seguros(candidatos)
     ch = (getattr(config, "CHAVE_API_GEMINI", None) or "").strip()
     if not ch or not candidatos:
         return []
@@ -318,7 +373,7 @@ def _sequencial_ordenar(
     for idx, (cid, nome, texto) in enumerate(candidatos):
         try:
             js = _analisar_um_cv_direto(config, ch, descricao_vaga, cid, nome, texto)
-        except RuntimeError:
+        except ErroQuotaGemini:
             raise
         if not js:
             p01, s00, j = 0.0, None, "Falha ao obter resposta (modelo ou formatação)."
@@ -339,6 +394,7 @@ def ordenar_talentos_por_gemini(
     descricao_vaga: str,
     candidatos: list[tuple[str, str, str]],
 ) -> list[tuple[str, float, str | None, int | None]]:
+    candidatos = _trios_candidatos_seguros(candidatos)
     lote = bool(getattr(config, "GEMINI_LOTE", True))
     if lote and candidatos:
         return ordenar_talentos_por_gemini_lote(config, descricao_vaga, candidatos)

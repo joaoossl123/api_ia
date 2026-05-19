@@ -19,6 +19,7 @@ type ResultadoAnalise = {
   pontuacao_afinidade: number
   score_0_100?: number | null
   justificativa?: string | null
+  lacunas_competencias_vaga?: string[]
   comentario_padrao: string
 }
 
@@ -37,9 +38,28 @@ type InfoSistema = {
   modelo_analise_vaga?: string
   motor_classificacao?: string
   chave_gemini_configurada?: boolean
+  motor_analise_vaga_padrao?: string
 }
 
 const caminho = (c: string) => `${URL_BASE_API}/api${c}`
+
+/** Lê `detail` do JSON de erro do FastAPI (ou texto bruto). */
+async function mensagemRespostaApi(r: Response): Promise<string> {
+  const texto = await r.text()
+  try {
+    const j = JSON.parse(texto) as { detail?: unknown }
+    const d = j.detail
+    if (typeof d === 'string') return d
+    if (Array.isArray(d) && d.length > 0) {
+      const primeiro = d[0] as { msg?: string }
+      if (typeof primeiro?.msg === 'string') return primeiro.msg
+    }
+  } catch {
+    /* corpo não é JSON */
+  }
+  if (texto && texto.length < 500) return texto
+  return `HTTP ${r.status} — veja o terminal do API (pode ser timeout ou modelo a carregar).`
+}
 
 function App() {
   const [nomeCandidato, setNomeCandidato] = useState('')
@@ -52,6 +72,7 @@ function App() {
   const [erro, setErro] = useState<string | null>(null)
   const [descricaoVaga, setDescricaoVaga] = useState('')
   const [quantidadeSugestoes, setQuantidadeSugestoes] = useState(5)
+  const [motorAnalise, setMotorAnalise] = useState<'padrao' | 'hibrido'>('padrao')
   const [analise, setAnalise] = useState<AnaliseResposta | null>(null)
   const [info, setInfo] = useState<InfoSistema | null>(null)
 
@@ -74,7 +95,13 @@ function App() {
   const carregarInfo = useCallback(async () => {
     try {
       const r = await fetch(caminho('/sistema/informacoes'))
-      if (r.ok) setInfo((await r.json()) as InfoSistema)
+      if (r.ok) {
+        const dados = (await r.json()) as InfoSistema
+        setInfo(dados)
+        if (dados.motor_analise_vaga_padrao === 'hibrido') {
+          setMotorAnalise('hibrido')
+        }
+      }
     } catch {
       // ignora: backend pode não estar a correr
     }
@@ -144,6 +171,8 @@ function App() {
     }
     setAAnalisar(true)
     setErro(null)
+    const abortar = new AbortController()
+    const tempoLimite = window.setTimeout(() => abortar.abort(), 600_000)
     try {
       const r = await fetch(caminho('/vaga/analise'), {
         method: 'POST',
@@ -151,13 +180,22 @@ function App() {
         body: JSON.stringify({
           descricao_da_vaga: descricaoVaga.trim(),
           quantidade_sugerida: Math.min(30, Math.max(1, quantidadeSugestoes)),
+          motor_analise: motorAnalise,
         }),
+        signal: abortar.signal,
       })
-      if (!r.ok) throw new Error('Análise indisponível. O gestor de IA pode estar a carregar ainda o modelo.')
+      if (!r.ok) throw new Error(await mensagemRespostaApi(r))
       setAnalise((await r.json()) as AnaliseResposta)
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha na análise')
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        setErro(
+          'Tempo esgotado (10 min). Na primeira execução o modelo pode estar a descarregar — espere e tente outra vez.',
+        )
+      } else {
+        setErro(e instanceof Error ? e.message : 'Falha na análise')
+      }
     } finally {
+      window.clearTimeout(tempoLimite)
       setAAnalisar(false)
     }
   }
@@ -175,7 +213,11 @@ function App() {
             Classificação: {info.motor_classificacao ?? '—'} (
             {info.modelo_analise_vaga ?? '—'}
             {info.chave_gemini_configurada === false ? ' — defina a chave no .env do API' : ''}
-            ) · Embeddings: {info.modelo} · Corte: {info.corte_pontuacao} · {info.nome_sistema}
+            ) · Embeddings: {info.modelo} · Corte: {info.corte_pontuacao}
+            {info.motor_analise_vaga_padrao
+              ? ` · Motor padrão: ${info.motor_analise_vaga_padrao}`
+              : ''}{' '}
+            · {info.nome_sistema}
           </p>
         )}
       </header>
@@ -256,6 +298,18 @@ function App() {
               value={quantidadeSugestoes}
               onChange={(e) => setQuantidadeSugestoes(Number(e.target.value))}
             />
+            <label className="rotulo" htmlFor="motor-analise">Motor de análise</label>
+            <select
+              id="motor-analise"
+              className="entrada"
+              value={motorAnalise}
+              onChange={(e) => setMotorAnalise(e.target.value as 'padrao' | 'hibrido')}
+            >
+              <option value="padrao">Padrão (Chroma + cross-encoder / Gemini)</option>
+              <option value="hibrido">
+                Híbrido (PyResparser + Resume Matcher + Gemini opcional)
+              </option>
+            </select>
             <button
               className="botao botao--secundario"
               type="submit"
@@ -293,6 +347,11 @@ function App() {
                     </div>
                     {x.justificativa ? (
                       <p className="dica-escore justificativa">{x.justificativa}</p>
+                    ) : null}
+                    {x.lacunas_competencias_vaga && x.lacunas_competencias_vaga.length > 0 ? (
+                      <p className="dica-escore">
+                        Lacunas de competências: {x.lacunas_competencias_vaga.join(', ')}
+                      </p>
                     ) : null}
                     <p className="dica-escore">{x.comentario_padrao}</p>
                   </div>

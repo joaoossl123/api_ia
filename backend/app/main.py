@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import logging
+import os
 import re
 import shutil
 import tempfile
 import uuid
+import unicodedata
 from pathlib import Path
 
 import uvicorn
-from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy.orm import Session
 
 from app.banco_dados import RegistroCurriculo, abrir_sessao, init_banco
@@ -28,19 +37,49 @@ from app.modelos import (
 )
 from app.servicos.ia_banco_talentos import BancoVetorialTalentos
 from app.servicos.pdf_servico import extrair_texto_de_pdf
-from app.servicos.gemini_talentos import chave_disponivel, ordenar_talentos_por_gemini
+from app.servicos.gemini_talentos import (
+    _trios_candidatos_seguros,
+    chave_disponivel,
+    ordenar_talentos_por_gemini,
+)
 from app.servicos.reclassificacao_vaga import (
     justificativa_resumo_local,
     ordenar_por_aderencia,
     ordenar_por_aderencia_lexical,
 )
 from app.servicos.pipeline_curriculo_vagas import ResultadoPipelineCurriculo, executar_pipeline_curriculo
+from app.servicos.pipeline_hibrido_vaga import executar_pipeline_hibrido_vaga
+from app.servicos.pyresparser_servico import (
+    extrair_dados_estruturados,
+    serializar_dados_estruturados,
+)
 
 app = FastAPI(
     title="Análise de Currículos (IA + Banco de talentos)",
     version="1.0.0",
     default_response_class=JSONResponse,
 )
+
+
+@app.exception_handler(Exception)
+async def tratamento_erro_generico(request: Request, exc: Exception) -> JSONResponse:
+    """Preserva 422/4xx do FastAPI; regista traceback e devolve 500 com mensagem opcional."""
+    if isinstance(exc, RequestValidationError):
+        return await request_validation_exception_handler(request, exc)
+    if isinstance(exc, StarletteHTTPException):
+        return await http_exception_handler(request, exc)
+    logging.getLogger("uvicorn.error").exception(
+        "Erro não tratado em %s %s",
+        request.method,
+        request.url.path,
+    )
+    # Por defeito mostra a causa (útil em dev). Em produção: OCULTAR_ERROS_500=1 no .env
+    if os.getenv("OCULTAR_ERROS_500", "").lower() in ("1", "true", "yes"):
+        detalhe = "Erro interno do servidor."
+    else:
+        detalhe = f"{type(exc).__name__}: {exc}"
+    return JSONResponse(status_code=500, content={"detail": detalhe})
+
 
 config = Configuracao()
 banco_vetor: BancoVetorialTalentos | None = None
@@ -63,6 +102,8 @@ origens = [o.strip() for o in config.ORIGEM_PERMITIDA_FRONTEND.split(",") if o.s
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origens or ["*"],
+    # Qualquer porta em localhost/127.0.0.1 (Vite escolhe 5173, 5174, … automaticamente)
+    allow_origin_regex=r"http://(127\.0\.0\.1|localhost)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -193,8 +234,17 @@ def informacoes() -> dict:
         "spacy_modelo": "pt_core_news_sm (instale com: python -m spacy download pt_core_news_sm)",
         "pipeline_compatibilidade": "spaCy → entidades; Sentence-Transformers → aderência a vagas; "
         "Transformers (zero-shot) → classificação de área de perfil",
-        "motor_classificacao": "gemini" if gem else "local",
+        "motor_classificacao": (
+            "local"
+            if bool(getattr(config, "PREFERIR_MOTOR_LOCAL", False))
+            else ("gemini" if gem else "local")
+        ),
         "chave_gemini_configurada": bool(gem),
+        "preferir_motor_local": bool(getattr(config, "PREFERIR_MOTOR_LOCAL", False)),
+        "gemini_max_candidatos_lote": int(getattr(config, "GEMINI_MAX_CANDIDATOS_LOTE", 18)),
+        "motor_analise_vaga_padrao": getattr(config, "MOTOR_ANALISE_VAGA", "padrao"),
+        "usar_pyresparser": bool(getattr(config, "USAR_PYRESPARSER", True)),
+        "hibrido_usar_gemini": bool(getattr(config, "HIBRIDO_USAR_GEMINI", True)),
     }
 
 
@@ -228,8 +278,13 @@ def _apenas_nome_extensao(nome: str) -> str:
 def _mensagem_fallback_gemini(err: BaseException) -> str:
     txt = str(err).lower()
     if "gemini_quota" in txt or "resource_exhausted" in txt or "429" in txt:
-        return "Gemini indisponível por quota (429); a usar reclassificação local."
-    return "Gemini indisponível; a usar reclassificação local."
+        return (
+            "Cota da API Gemini esgotada (HTTP 429). A análise seguiu com o reclassificador local "
+            "(sem custo Google). Para voltar ao Gemini: aguarde o reset da cota (free tier ~1 min), "
+            "ative faturação em https://aistudio.google.com/apikey , ou defina PREFERIR_MOTOR_LOCAL=true "
+            "no .env para não tentar a API."
+        )
+    return "Gemini indisponível; a análise seguiu com o reclassificador local."
 
 
 def _mensagem_modo_local(chave_configurada: bool) -> str:
@@ -247,6 +302,98 @@ def _mensagem_modo_local(chave_configurada: bool) -> str:
 def _score_local_0_100(pontuacao_0_1: float) -> int:
     p = max(0.0, min(1.0, float(pontuacao_0_1)))
     return int(round(p * 100))
+
+
+def _ordenar_candidatos_local(
+    desc: str,
+    cands_local: list[tuple[str, str]],
+) -> list[tuple[str, float]]:
+    try:
+        return ordenar_por_aderencia(config, desc, cands_local)
+    except Exception:
+        return ordenar_por_aderencia_lexical(config, desc, cands_local)
+
+
+def _pool_candidatos_para_gemini(
+    desc: str,
+    candidatos: list[tuple[str, str, str]],
+    cands_local: list[tuple[str, str]],
+) -> list[tuple[str, str, str]]:
+    """Limita CVs enviados ao Gemini para não estourar cota/tokens."""
+    max_g = max(4, int(getattr(config, "GEMINI_MAX_CANDIDATOS_LOTE", 18)))
+    if len(candidatos) <= max_g:
+        return candidatos
+    ord_loc = _ordenar_candidatos_local(desc, cands_local)
+    top_ids = [a for a, _ in ord_loc[:max_g]]
+    por_id = {c[0]: c for c in candidatos}
+    return [por_id[cid] for cid in top_ids if cid in por_id]
+
+
+def _mesclar_ordem_gemini_com_local(
+    ordem_gem: list[tuple[str, float, str | None, int | None]],
+    ord_loc: list[tuple[str, float]],
+) -> list[tuple[str, float, str | None, int | None]]:
+    """Mantém scores Gemini nos pré-selecionados; o restante usa reclassificação local."""
+    vistos = {t[0] for t in ordem_gem}
+    resto = [(a, b, None, None) for a, b in ord_loc if a not in vistos]
+    mesclada = list(ordem_gem) + resto
+    mesclada.sort(key=lambda x: (-float(x[1] or 0.0), str(x[0])))
+    return mesclada
+
+
+def _normalizar_texto_busca(texto: str) -> str:
+    n = unicodedata.normalize("NFKD", texto or "")
+    n = "".join(c for c in n if not unicodedata.combining(c))
+    return n.lower()
+
+
+def _tokens_requisito(requisito: str) -> list[str]:
+    base = _normalizar_texto_busca(requisito)
+    return re.findall(r"[a-z0-9]{3,}", base)
+
+
+def _requisito_tem_evidencia_no_cv(requisito: str, texto_cv: str) -> bool:
+    req = _normalizar_texto_busca(requisito).strip()
+    doc = _normalizar_texto_busca(texto_cv)
+    if not req:
+        return True
+    if req in doc:
+        return True
+    toks = _tokens_requisito(requisito)
+    if not toks:
+        return False
+    hits = sum(1 for t in toks if t in doc)
+    min_hits = max(1, int(round(len(toks) * 0.75)))
+    return hits >= min_hits
+
+
+def _avaliar_requisitos_obrigatorios(
+    texto_cv: str,
+    requisitos_obrigatorios: list[str],
+) -> tuple[bool, list[str]]:
+    reqs = [r.strip() for r in requisitos_obrigatorios if (r or "").strip()]
+    if not reqs:
+        return True, []
+    lacunas: list[str] = []
+    for req in reqs:
+        if not _requisito_tem_evidencia_no_cv(req, texto_cv):
+            lacunas.append(req)
+    return len(lacunas) == 0, lacunas
+
+
+def _descricao_vaga_com_requisitos(
+    descricao: str,
+    obrigatorios: list[str],
+    desejaveis: list[str],
+) -> str:
+    ob = [r.strip() for r in obrigatorios if (r or "").strip()]
+    de = [r.strip() for r in desejaveis if (r or "").strip()]
+    partes = [descricao.strip()]
+    if ob:
+        partes.append("Requisitos obrigatórios:\n- " + "\n- ".join(ob))
+    if de:
+        partes.append("Requisitos desejáveis:\n- " + "\n- ".join(de))
+    return "\n\n".join([p for p in partes if p]).strip()
 
 
 @router.post(
@@ -282,6 +429,9 @@ def enviar_curriculo(
     prev = (texto[: 1800] + "…") if len(texto) > 1800 else texto
     email_l = (email or "").strip()[:200] or None
 
+    dados_cv = extrair_dados_estruturados(config, alvo, texto)
+    dados_json = serializar_dados_estruturados(dados_cv)
+
     bv.inserir_curriculo(
         texto,
         {
@@ -299,6 +449,7 @@ def enviar_curriculo(
         caminho_relativo_pdf=rel,
         texto_indexado=texto,
         resumo_vista_previa=prev,
+        dados_estruturados_json=dados_json,
     )
     db.add(r)
     db.commit()
@@ -345,6 +496,9 @@ def _justificativa_para_exibicao(
     r = db.get(RegistroCurriculo, cid)
     if r is None:
         return (just_modelo or "").strip() or None
+    t = (just_modelo or "").strip()
+    if t:
+        return t[:1500]
     if not via_gemini:
         return justificativa_resumo_local(
             desc_vaga,
@@ -352,9 +506,6 @@ def _justificativa_para_exibicao(
             r.texto_indexado or "",
             p,
         )
-    t = (just_modelo or "").strip()
-    if t:
-        return t[:1500]
     n = (r.nome_candidato or "Candidato")[:100]
     sc = score_0_100 if score_0_100 is not None else int(round(p * 100))
     return (
@@ -369,6 +520,9 @@ def _montar_resposta_candidato(
     p: float,
     justificativa: str | None = None,
     score_0_100: int | None = None,
+    atende_requisitos_obrigatorios: bool | None = None,
+    lacunas_requisitos_obrigatorios: list[str] | None = None,
+    lacunas_competencias_vaga: list[str] | None = None,
 ) -> CandidatoResultadoResposta | None:
     r = db.get(RegistroCurriculo, cid)
     if r is None:
@@ -381,7 +535,23 @@ def _montar_resposta_candidato(
         pontuacao_afinidade=round(p, 4),
         justificativa=justificativa,
         score_0_100=score_0_100,
+        atende_requisitos_obrigatorios=atende_requisitos_obrigatorios,
+        lacunas_requisitos_obrigatorios=lacunas_requisitos_obrigatorios or [],
+        lacunas_competencias_vaga=lacunas_competencias_vaga or [],
     )
+
+
+@router.post(
+    "/vaga/analise-hibrida",
+    response_model=AnaliseVagaResposta,
+    summary="Análise híbrida: PyResparser + Resume Matcher + Gemini (opcional)",
+)
+def analisar_vaga_hibrida(
+    requisicao: EnvioVagaRequisicao,
+    db: Session = Depends(get_db),
+) -> AnaliseVagaResposta:
+    requisicao = requisicao.model_copy(update={"motor_analise": "hibrido"})
+    return analisar_vaga(requisicao, db)
 
 
 @router.post(
@@ -396,7 +566,13 @@ def analisar_vaga(
     """Usa a descrição da vaga e reclassifica os CVs (par a par) em função do texto do PDF indexado."""
     n = requisicao.quantidade_sugerida
     corte = config.CORTE_PONTUACAO_MINIMA
-    desc = requisicao.descricao_da_vaga
+    requisitos_obrigatorios = [r for r in (requisicao.requisitos_obrigatorios or []) if (r or "").strip()]
+    requisitos_desejaveis = [r for r in (requisicao.requisitos_desejaveis or []) if (r or "").strip()]
+    desc = _descricao_vaga_com_requisitos(
+        requisicao.descricao_da_vaga,
+        requisitos_obrigatorios,
+        requisitos_desejaveis,
+    )
     total_reg = int(db.query(RegistroCurriculo).count() or 0)
     if total_reg == 0:
         return AnaliseVagaResposta(
@@ -420,37 +596,51 @@ def analisar_vaga(
                     (r.id, (r.nome_candidato or "—")[:200], r.texto_indexado)
                 )
     else:
-        bv = obter_banco_vetorial()
-        pool = min(max_local, max(pool_min, n * pool_mul))
-        itens = bv.buscar_afinidade(desc, limite=pool)
-        for item in itens:
-            cid = str(item.get("candidato_id", ""))
-            r = db.get(RegistroCurriculo, cid)
-            if r and r.texto_indexado and not r.texto_indexado.startswith("["):
-                candidatos.append(
-                    (r.id, (r.nome_candidato or "—")[:200], r.texto_indexado)
+        try:
+            bv = obter_banco_vetorial()
+            pool = min(max_local, max(pool_min, n * pool_mul))
+            itens = bv.buscar_afinidade(desc, limite=pool)
+            for item in itens:
+                cid = str(item.get("candidato_id", ""))
+                r = db.get(RegistroCurriculo, cid)
+                if r and r.texto_indexado and not r.texto_indexado.startswith("["):
+                    candidatos.append(
+                        (r.id, (r.nome_candidato or "—")[:200], r.texto_indexado)
+                    )
+            vistos = {a[0] for a in candidatos}
+            if len(candidatos) < 8:
+                alvo = min(max_local, max(16, n * 2))
+                falta = max(0, alvo - len(candidatos))
+                limite_extra = min(pool_suplementar, falta)
+                extras = (
+                    db.query(RegistroCurriculo)
+                    .order_by(RegistroCurriculo.criado_em.desc())
+                    .limit(limite_extra)
+                    .all()
                 )
-        vistos = {a[0] for a in candidatos}
-        if len(candidatos) < 8:
-            alvo = min(max_local, max(16, n * 2))
-            falta = max(0, alvo - len(candidatos))
-            limite_extra = min(pool_suplementar, falta)
-            extras = (
+                for r in extras:
+                    if r.id in vistos:
+                        continue
+                    if r.texto_indexado and not r.texto_indexado.startswith("["):
+                        candidatos.append(
+                            (r.id, (r.nome_candidato or "—")[:200], r.texto_indexado)
+                        )
+                        vistos.add(r.id)
+                    if len(candidatos) >= alvo:
+                        break
+        except Exception:
+            for r in (
                 db.query(RegistroCurriculo)
                 .order_by(RegistroCurriculo.criado_em.desc())
-                .limit(limite_extra)
+                .limit(max(max_local, n * pool_mul))
                 .all()
-            )
-            for r in extras:
-                if r.id in vistos:
-                    continue
+            ):
                 if r.texto_indexado and not r.texto_indexado.startswith("["):
                     candidatos.append(
                         (r.id, (r.nome_candidato or "—")[:200], r.texto_indexado)
                     )
-                    vistos.add(r.id)
-                if len(candidatos) >= alvo:
-                    break
+
+    candidatos = _trios_candidatos_seguros(candidatos)
 
     if not candidatos:
         return AnaliseVagaResposta(
@@ -462,6 +652,10 @@ def analisar_vaga(
     cands_local: list[tuple[str, str]] = [(a, c) for a, _b, c in candidatos]
     msg_extra = ""
     via_gemini = False
+    lacunas_comp_por_id: dict[str, list[str]] = {}
+    motor = (requisicao.motor_analise or getattr(config, "MOTOR_ANALISE_VAGA", "padrao") or "padrao").strip().lower()
+    if motor not in ("padrao", "hibrido"):
+        motor = "padrao"
 
     if bool(getattr(config, "APENAS_GEMINI", False)) and not chave_configurada:
         raise HTTPException(
@@ -469,30 +663,44 @@ def analisar_vaga(
             detail="Defina CHAVE_API_GEMINI ou GOOGLE_API_KEY no ficheiro .env (pasta backend).",
         )
 
-    if chave_configurada:
-        try:
-            ordem = ordenar_talentos_por_gemini(config, desc, candidatos)
-            total_antes = len(ordem)
-            via_gemini = True
-        except (RuntimeError, OSError, ValueError, MemoryError) as err:
-            if bool(getattr(config, "APENAS_GEMINI", False)):
-                raise HTTPException(status_code=502, detail=_mensagem_fallback_gemini(err)) from err
-            try:
-                ord2 = ordenar_por_aderencia(config, desc, cands_local)
-            except (RuntimeError, OSError, ValueError, MemoryError):
-                ord2 = ordenar_por_aderencia_lexical(config, desc, cands_local)
-            total_antes = len(ord2)
-            ordem = [(a, b, None, None) for a, b in ord2]
-            msg_extra = " " + _mensagem_fallback_gemini(err)
+    if motor == "hibrido":
+        dados_map: dict[str, str | None] = {}
+        for cid, _, _ in candidatos:
+            r = db.get(RegistroCurriculo, cid)
+            dados_map[cid] = r.dados_estruturados_json if r else None
+        ordem, msg_hibrido, lacunas_comp_por_id, via_gemini = executar_pipeline_hibrido_vaga(
+            config, desc, candidatos, dados_map
+        )
+        total_antes = len(ordem)
+        msg_extra = msg_hibrido
     else:
-        try:
-            ord2 = ordenar_por_aderencia(config, desc, cands_local)
-        except (RuntimeError, OSError, ValueError, MemoryError):
-            ord2 = ordenar_por_aderencia_lexical(config, desc, cands_local)
-        total_antes = len(ord2)
-        ordem = [(a, b, None, None) for a, b in ord2]
+        ord_loc_completa = _ordenar_candidatos_local(desc, cands_local)
+        usar_gemini = chave_configurada and not bool(getattr(config, "PREFERIR_MOTOR_LOCAL", False))
+
+        if usar_gemini:
+            pool_gemini = _pool_candidatos_para_gemini(desc, candidatos, cands_local)
+            try:
+                ordem_gem = ordenar_talentos_por_gemini(config, desc, pool_gemini)
+                if len(candidatos) > len(pool_gemini):
+                    ordem = _mesclar_ordem_gemini_com_local(ordem_gem, ord_loc_completa)
+                else:
+                    ordem = ordem_gem
+                total_antes = len(ordem)
+                via_gemini = True
+            except Exception as err:
+                if bool(getattr(config, "APENAS_GEMINI", False)):
+                    raise HTTPException(status_code=502, detail=_mensagem_fallback_gemini(err)) from err
+                total_antes = len(ord_loc_completa)
+                ordem = [(a, b, None, None) for a, b in ord_loc_completa]
+                msg_extra = " " + _mensagem_fallback_gemini(err)
+        else:
+            total_antes = len(ord_loc_completa)
+            ordem = [(a, b, None, None) for a, b in ord_loc_completa]
+            if chave_configurada and bool(getattr(config, "PREFERIR_MOTOR_LOCAL", False)):
+                msg_extra = " Modo local ativo (PREFERIR_MOTOR_LOCAL=true); Gemini não foi chamado."
 
     bons: list[CandidatoResultadoResposta] = []
+    aproximados: list[CandidatoResultadoResposta] = []
     for tu in ordem:
         cid = tu[0]
         p = float(tu[1])
@@ -500,6 +708,13 @@ def analisar_vaga(
         s100 = tu[3] if len(tu) > 3 else None
         if p < corte:
             continue
+        r_cv = db.get(RegistroCurriculo, cid)
+        if r_cv is None:
+            continue
+        atende_obrig, lacunas_obrig = _avaliar_requisitos_obrigatorios(
+            r_cv.texto_indexado or "",
+            requisitos_obrigatorios,
+        )
         row = _montar_resposta_candidato(
             db,
             cid,
@@ -514,64 +729,57 @@ def analisar_vaga(
                 (s100 if via_gemini else _score_local_0_100(p)),
             ),
             score_0_100=(s100 if via_gemini else _score_local_0_100(p)),
+            atende_requisitos_obrigatorios=atende_obrig,
+            lacunas_requisitos_obrigatorios=lacunas_obrig,
+            lacunas_competencias_vaga=lacunas_comp_por_id.get(cid, []),
         )
-        if row:
+        if row and atende_obrig:
             bons.append(row)
+        elif row:
+            row.justificativa = (
+                f"Aproximação sem cobertura total dos obrigatórios ({', '.join(lacunas_obrig[:3])}). "
+                f"{row.justificativa or ''}"
+            ).strip()
+            aproximados.append(row)
         if len(bons) >= n:
             break
 
     if bons:
-        if via_gemini:
+        if len(bons) < n and aproximados:
+            faltam = n - len(bons)
+            bons.extend(aproximados[:faltam])
+        if motor == "hibrido":
+            msg_ok = msg_extra or "Análise híbrida concluída."
+        elif via_gemini:
             msg_ok = (
                 f"Análise concluída com {config.NOME_MODELO_GEMINI} (Google) — ordenação "
                 f"com base na vaga e no texto indexado de cada PDF."
             )
         else:
             msg_ok = _mensagem_modo_local(chave_configurada)
-        if msg_extra:
-            msg_ok = msg_ok + " " + msg_extra
+        if msg_extra and motor != "hibrido":
+            msg_ok = f"{msg_ok} {msg_extra}".strip()
+        if requisitos_obrigatorios:
+            msg_ok += (
+                " Filtro de requisitos obrigatórios ativo; quando faltam candidatos aderentes, "
+                "a API completa com os perfis mais próximos (marcados como aproximação)."
+            )
         return AnaliseVagaResposta(
             mensagem_status=msg_ok,
             total_antes_corte=total_antes,
             resultados=bons,
         )
 
-    bons2: list[CandidatoResultadoResposta] = []
-    for tu in ordem[: max(n, 3)]:
-        cid = tu[0]
-        p = float(tu[1])
-        just = tu[2] if len(tu) > 2 else None
-        s100 = tu[3] if len(tu) > 3 else None
-        row = _montar_resposta_candidato(
-            db,
-            cid,
-            p,
-            justificativa=_justificativa_para_exibicao(
-                db,
-                desc,
-                cid,
-                p,
-                just,
-                via_gemini,
-                (s100 if via_gemini else _score_local_0_100(p)),
-            ),
-            score_0_100=(s100 if via_gemini else _score_local_0_100(p)),
-        )
-        if row:
-            bons2.append(row)
-    if not bons2:
-        return AnaliseVagaResposta(
-            mensagem_status="Falha ao classificar. Verifique a chave Gemini, a quota, ou tente a reclassificação local outra vez.",
-            total_antes_corte=0,
-            resultados=[],
-        )
+    pct_corte = int(round(corte * 100))
+    motor = f" ({config.NOME_MODELO_GEMINI})" if via_gemini else " (reclassificador local)"
     return AnaliseVagaResposta(
         mensagem_status=(
-            f"Afinidade geral abaixo do corte. Melhor fila aproximada."
-            f"{' (Gemini)' if via_gemini else ' (reclassificador local)'} {msg_extra}".strip()
+            f"Nenhum candidato atingiu a afinidade mínima de {pct_corte}% "
+            f"(corte {corte:.2f} em escala 0–1). Os perfis analisados não têm aderência "
+            f"suficiente à vaga — não são sugeridos.{motor}{msg_extra}".strip()
         ),
         total_antes_corte=total_antes,
-        resultados=bons2[:n],
+        resultados=[],
     )
 
 

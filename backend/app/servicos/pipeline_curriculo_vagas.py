@@ -230,8 +230,10 @@ def _classificar_perfil_por_nli(
         hypothesis_template=HIPOTESE_NLI,
     )
     by_en: dict[str, str] = {a[0]: a[1] for a in orig}
-    labels_ = res.get("labels", [])
-    scores_ = res.get("scores", [])
+    labels_raw = res.get("labels", []) or []
+    scores_raw = res.get("scores", []) or []
+    labels_ = labels_raw.tolist() if hasattr(labels_raw, "tolist") else list(labels_raw)
+    scores_ = scores_raw.tolist() if hasattr(scores_raw, "tolist") else list(scores_raw)
     saida: list[dict[str, Any]] = []
     for i, le in enumerate(labels_):
         sc = float(scores_[i]) if i < len(scores_) else 0.0

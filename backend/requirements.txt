@@ -1,4 +1,7 @@
 # Depois: python -m spacy download pt_core_news_sm
+# Nota Windows: chromadb fixa tokenizers<=0.20.3 no metadata, mas sentence-transformers/transformers
+# precisam de tokenizers>=0.22. Após `pip install -r requirements.txt`, se ImportError em tokenizers:
+#   python -m pip install "tokenizers==0.22.2"
 spacy>=3.7.0
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
@@ -13,3 +16,4 @@ sqlalchemy==2.0.36
 pydantic-settings==2.6.1
 greenlet==3.1.1
 numpy<2.0.0
+scikit-learn>=1.3.0

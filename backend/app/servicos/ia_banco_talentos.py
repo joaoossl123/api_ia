@@ -18,6 +18,34 @@ from app.configuracao import Configuracao, resolver_caminho
 NOME_COLECAO = "banco_talentos_candidatos"
 
 
+def _primeira_batch_query(val: Any) -> list[Any]:
+    """Normaliza ids/distâncias/metadados do Chroma (list, tuple, set, ndarray)."""
+    if val is None:
+        return []
+    if hasattr(val, "tolist"):
+        try:
+            val = val.tolist()
+        except Exception:
+            pass
+    if isinstance(val, set):
+        return list(val)
+    if isinstance(val, (list, tuple)):
+        if len(val) == 0:
+            return []
+        primeiro = val[0]
+        if isinstance(primeiro, set):
+            return list(primeiro)
+        if hasattr(primeiro, "tolist"):
+            try:
+                primeiro = primeiro.tolist()
+            except Exception:
+                pass
+        if isinstance(primeiro, (list, tuple)):
+            return list(primeiro)
+        return list(val)
+    return []
+
+
 class BancoVetorialTalentos:
     def __init__(self, config: Configuracao) -> None:
         self._config = config
@@ -76,18 +104,30 @@ class BancoVetorialTalentos:
             )
         except Exception:
             return []
+        if not isinstance(resultado, dict) and hasattr(resultado, "keys"):
+            try:
+                resultado = dict(resultado)
+            except Exception:
+                return []
+        elif not isinstance(resultado, dict):
+            return []
         itens: list[dict[str, Any]] = []
-        ids_ = (resultado.get("ids") or [[]])[0] or []
-        dists = (resultado.get("distances") or [[]])[0] or []
-        mets = (resultado.get("metadatas") or [[]])[0] or []
+        ids_ = _primeira_batch_query(resultado.get("ids"))
+        dists = _primeira_batch_query(resultado.get("distances"))
+        mets = _primeira_batch_query(resultado.get("metadatas"))
         for i, ident in enumerate(ids_):
             dist = float(dists[i]) if i < len(dists) else 1.0
             afinidade = max(0.0, 1.0 - dist)
+            md: dict[str, Any] = {}
+            if i < len(mets):
+                mi = mets[i]
+                if isinstance(mi, dict):
+                    md = mi
             itens.append(
                 {
                     "candidato_id": ident,
                     "pontuacao_afinidade": round(afinidade, 4),
-                    "metadados": mets[i] or {},
+                    "metadados": md,
                 }
             )
         return itens

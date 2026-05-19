@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +20,21 @@ class EnvioVagaRequisicao(BaseModel):
         le=30,
         description="Máximo de candidatos a retornar, ordenado por afinidade.",
     )
+    requisitos_obrigatorios: list[str] = Field(
+        default_factory=list,
+        description="Lista de requisitos eliminatórios da vaga.",
+    )
+    requisitos_desejaveis: list[str] = Field(
+        default_factory=list,
+        description="Lista de requisitos diferenciais (não eliminatórios).",
+    )
+    motor_analise: Literal["padrao", "hibrido"] = Field(
+        default="padrao",
+        description=(
+            "padrao: Chroma + cross-encoder/Gemini. "
+            "hibrido: PyResparser + Resume Matcher (TF-IDF/semântico/skills) + Gemini opcional."
+        ),
+    )
 
 
 class CandidatoResultadoResposta(BaseModel):
@@ -35,6 +50,18 @@ class CandidatoResultadoResposta(BaseModel):
     justificativa: Optional[str] = Field(
         default=None,
         description="Porque este candidato foi (ou não) selecionado, com referência concreta ao CV e à vaga.",
+    )
+    atende_requisitos_obrigatorios: Optional[bool] = Field(
+        default=None,
+        description="Indica se o currículo cobriu os requisitos obrigatórios informados na vaga.",
+    )
+    lacunas_requisitos_obrigatorios: list[str] = Field(
+        default_factory=list,
+        description="Requisitos obrigatórios sem evidência clara no currículo.",
+    )
+    lacunas_competencias_vaga: list[str] = Field(
+        default_factory=list,
+        description="Competências da vaga sem evidência no CV (motor híbrido / Resume Matcher).",
     )
     comentario_padrao: str = "Ordenado por afinidade com a vaga. Leia a justificativa e o documento do candidato."
 

@@ -23,7 +23,8 @@ class Configuracao(BaseSettings):
     PORTA_API: int = 8000
     ORIGEM_PERMITIDA_FRONTEND: str = (
         "http://127.0.0.1:5173,http://localhost:5173,"
-        "http://127.0.0.1:5174,http://localhost:5174"
+        "http://127.0.0.1:5174,http://localhost:5174,"
+        "http://127.0.0.1:5175,http://localhost:5175"
     )
 
     # Caminhos (relativos à pasta backend/)
@@ -46,11 +47,17 @@ class Configuracao(BaseSettings):
     # Google Gemini (SDK google.genai). Por defeito: 1 req. em lote = rápido. Modelos: ver AI Studio
     NOME_MODELO_GEMINI: str = "gemini-2.0-flash-lite"
     NOME_MODELO_GEMINI_BACKUP: str = "gemini-flash-lite-latest"
-    TRECHO_CANDIDATO_GEMINI: int = 3_500
+    # Opcional: terceiro modelo se os dois primeiros falharem (deixe vazio para ignorar)
+    NOME_MODELO_GEMINI_TERCEIRO: str = ""
+    TRECHO_CANDIDATO_GEMINI: int = 2_500
+    # Máx. de CVs por chamada Gemini (evita estourar cota/tokens do free tier)
+    GEMINI_MAX_CANDIDATOS_LOTE: int = 18
     # true: uma chamada com todos os CVs (recomendado, menos cota e mais rápido)
     GEMINI_LOTE: bool = True
     GEMINI_TENTATIVAS_POR_MODELO: int = 3
+    GEMINI_TENTATIVAS_429: int = 2
     GEMINI_PAUSA_503_SEGUNDOS: int = 5
+    GEMINI_PAUSA_429_SEGUNDOS: int = 45
     # Apenas se GEMINI_LOTE=False (1 CV por chamada)
     GEMINI_PAUSA_ENTRE_CVS_SEGUNDOS: int = 0
     CHAVE_API_GEMINI: str = Field(
@@ -63,10 +70,22 @@ class Configuracao(BaseSettings):
     )
     # true = força análise só com Gemini; false = se não houver chave, usa modelo local
     APENAS_GEMINI: bool = False
+    # true = não chama a API Google (útil com cota 429 esgotada; só reclassificador local)
+    PREFERIR_MOTOR_LOCAL: bool = False
+
+    # Motor de análise de vaga: padrao | hibrido (PyResparser + Resume Matcher + Gemini opcional)
+    MOTOR_ANALISE_VAGA: str = "padrao"
+    USAR_PYRESPARSER: bool = True
+    HIBRIDO_USAR_GEMINI: bool = True
+    # Pesos do Resume Matcher (soma recomendada ≈ 1.0)
+    PESO_RM_SEMANTICO: float = 0.35
+    PESO_RM_TFIDF: float = 0.30
+    PESO_RM_SKILLS: float = 0.28
+    PESO_RM_EXPERIENCIA: float = 0.07
 
     # Pesos do score final (0..1): cruz (par a par) + alinhamento de termos da vaga no PDF
-    PESO_CROSS_ENCODER: float = 0.70
-    PESO_COBERTURA_LEXICAL: float = 0.30
+    PESO_CROSS_ENCODER: float = 0.62
+    PESO_COBERTURA_LEXICAL: float = 0.38
 
     # Se houver no máximo este número de CVs, todos entram no reclassificador (máxima aderência)
     MAX_CURRICULOS_TODOS_NA_ANALISE: int = 64
@@ -78,7 +97,7 @@ class Configuracao(BaseSettings):
 
     # Busca: corte após reclassificação (escala combinada, tendencialmente 0,25–0,95)
     LIMITE_PADRAO_CANDIDATOS: int = 15
-    CORTE_PONTUACAO_MINIMA: float = 0.35
+    CORTE_PONTUACAO_MINIMA: float = 0.42
     RETORNAR_MELHOR_NUMERO: int = 5
 
 
