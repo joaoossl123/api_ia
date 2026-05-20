@@ -131,6 +131,10 @@
   resize: vertical;
 }
 
+.texto-grande--medio {
+  min-height: 6rem;
+}
+
 .fila-rotulos {
   margin-top: 0.2rem;
 }

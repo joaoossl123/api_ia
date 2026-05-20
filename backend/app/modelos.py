@@ -22,11 +22,11 @@ class EnvioVagaRequisicao(BaseModel):
     )
     requisitos_obrigatorios: list[str] = Field(
         default_factory=list,
-        description="Lista de requisitos eliminatórios da vaga.",
+        description="Requisitos básicos/obrigatórios (eliminatórios): um item por entrada; exigem evidência no CV.",
     )
     requisitos_desejaveis: list[str] = Field(
         default_factory=list,
-        description="Lista de requisitos diferenciais (não eliminatórios).",
+        description="Requisitos desejáveis (diferenciais, não eliminatórios): enriquecem a análise da vaga.",
     )
     motor_analise: Literal["padrao", "hibrido"] = Field(
         default="padrao",

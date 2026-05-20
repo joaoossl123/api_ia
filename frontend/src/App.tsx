@@ -19,6 +19,8 @@ type ResultadoAnalise = {
   pontuacao_afinidade: number
   score_0_100?: number | null
   justificativa?: string | null
+  atende_requisitos_obrigatorios?: boolean | null
+  lacunas_requisitos_obrigatorios?: string[]
   lacunas_competencias_vaga?: string[]
   comentario_padrao: string
 }
@@ -42,6 +44,14 @@ type InfoSistema = {
 }
 
 const caminho = (c: string) => `${URL_BASE_API}/api${c}`
+
+/** Converte textarea (um requisito por linha) em lista para a API. */
+function linhasParaRequisitos(texto: string): string[] {
+  return texto
+    .split(/\r?\n/)
+    .map((linha) => linha.replace(/^[-•*]\s*/, '').trim())
+    .filter((linha) => linha.length >= 2)
+}
 
 /** Lê `detail` do JSON de erro do FastAPI (ou texto bruto). */
 async function mensagemRespostaApi(r: Response): Promise<string> {
@@ -71,6 +81,8 @@ function App() {
   const [aAnalisar, setAAnalisar] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [descricaoVaga, setDescricaoVaga] = useState('')
+  const [requisitosBasicos, setRequisitosBasicos] = useState('')
+  const [requisitosDesejaveis, setRequisitosDesejaveis] = useState('')
   const [quantidadeSugestoes, setQuantidadeSugestoes] = useState(5)
   const [motorAnalise, setMotorAnalise] = useState<'padrao' | 'hibrido'>('padrao')
   const [analise, setAnalise] = useState<AnaliseResposta | null>(null)
@@ -181,6 +193,8 @@ function App() {
           descricao_da_vaga: descricaoVaga.trim(),
           quantidade_sugerida: Math.min(30, Math.max(1, quantidadeSugestoes)),
           motor_analise: motorAnalise,
+          requisitos_obrigatorios: linhasParaRequisitos(requisitosBasicos),
+          requisitos_desejaveis: linhasParaRequisitos(requisitosDesejaveis),
         }),
         signal: abortar.signal,
       })
@@ -270,10 +284,9 @@ function App() {
         <section className="cartao" aria-labelledby="titulo-vaga">
           <h2 id="titulo-vaga">2. Vaga em aberto — encontrar o melhor alinhamento</h2>
           <p className="explicacao">
-            Coloque título, responsabilidades, requisitos desejáveis, linguagens, ferramentas e
-            nível. A aplicação percorre o banco e devolve os currículos com maior <em>aderência
-            estatística</em> ao perfil, coerente com a política de corte mínima (baixa taxa de
-            falsos destaques).
+            Descreva a vaga e, se quiser, liste <strong>requisitos básicos</strong> (eliminatórios)
+            e <strong>desejáveis</strong> — um por linha. A API prioriza candidatos que cobrem os
+            básicos no texto do currículo.
           </p>
           <form onSubmit={analisarVaga} className="formulario">
             <label className="rotulo" htmlFor="vaga">Descrição da vaga (texto livre)</label>
@@ -285,6 +298,28 @@ function App() {
               minLength={10}
               rows={10}
               required
+            />
+            <label className="rotulo" htmlFor="req-basicos">
+              Requisitos básicos (obrigatórios) — um por linha
+            </label>
+            <textarea
+              id="req-basicos"
+              className="texto-grande texto-grande--medio"
+              value={requisitosBasicos}
+              onChange={(e) => setRequisitosBasicos(e.target.value)}
+              rows={5}
+              placeholder={'Ex.:\nPython\nExperiência com APIs REST\n3 anos na área\nCNH categoria B'}
+            />
+            <label className="rotulo" htmlFor="req-desejaveis">
+              Requisitos desejáveis — um por linha (opcional)
+            </label>
+            <textarea
+              id="req-desejaveis"
+              className="texto-grande texto-grande--medio"
+              value={requisitosDesejaveis}
+              onChange={(e) => setRequisitosDesejaveis(e.target.value)}
+              rows={4}
+              placeholder={'Ex.:\nDocker\nInglês avançado\nExperiência com Scrum'}
             />
             <div className="fila-rotulos">
               <label className="rotulo" htmlFor="n-sugestoes">Quantos candidatos sugerir (1–30)</label>
@@ -347,6 +382,23 @@ function App() {
                     </div>
                     {x.justificativa ? (
                       <p className="dica-escore justificativa">{x.justificativa}</p>
+                    ) : null}
+                    {x.atende_requisitos_obrigatorios != null ? (
+                      <p className="dica-escore">
+                        Requisitos básicos:{' '}
+                        {x.atende_requisitos_obrigatorios ? (
+                          <strong>atende</strong>
+                        ) : (
+                          <strong>não atende por completo</strong>
+                        )}
+                      </p>
+                    ) : null}
+                    {x.lacunas_requisitos_obrigatorios &&
+                    x.lacunas_requisitos_obrigatorios.length > 0 ? (
+                      <p className="dica-escore">
+                        Lacunas nos requisitos básicos:{' '}
+                        {x.lacunas_requisitos_obrigatorios.join(', ')}
+                      </p>
                     ) : null}
                     {x.lacunas_competencias_vaga && x.lacunas_competencias_vaga.length > 0 ? (
                       <p className="dica-escore">
